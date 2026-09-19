@@ -103,8 +103,13 @@ func serverEnv(c Config, brain string) map[string]string {
 // zekra mcp:install <client> [--brain N] [--name N] [--user] [--command PATH]
 func cmdInstall(args []string) error {
 	pos, f := parseFlags(args)
+	// --remote is boolean; `--remote claude-code` must not swallow the client.
+	if v, ok := f["remote"]; ok && v != "true" && v != "false" {
+		pos = append(pos, v)
+		f["remote"] = "true"
+	}
 	if len(pos) == 0 {
-		return fmt.Errorf("usage: zekra mcp:install <claude-code|claude-desktop|codex|gemini|cursor|print> [--brain N] [--name N] [--user]")
+		return fmt.Errorf("usage: zekra mcp:install <claude-code|claude-desktop|codex|gemini|cursor|print> [--brain N] [--name N] [--user] [--remote]")
 	}
 	target := pos[0]
 	c := loadConfig()
@@ -118,6 +123,9 @@ func cmdInstall(args []string) error {
 		if command == "" {
 			command = "zekra"
 		}
+	}
+	if f["remote"] == "true" {
+		return installRemote(target, name, f["user"] == "true")
 	}
 	env := serverEnv(c, f["brain"])
 

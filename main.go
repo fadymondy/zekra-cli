@@ -286,6 +286,7 @@ AUTH
 MCP
   zekra mcp                                  run the stdio MCP server (clients invoke this)
   zekra mcp:install <client> [--brain N] [--name N] [--user]   wire into a client
+  zekra mcp:install <client> --remote   hosted https://mcp.zekra.dev (OAuth; claude-code, cursor, gemini)
   zekra mcp:print   <client> [--brain N]     print the config snippet, install nothing
   zekra mcp:uninstall <client> [--name N]    remove the zekra entry from a client
 

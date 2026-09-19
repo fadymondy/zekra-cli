@@ -1,174 +1,415 @@
 package main
 
-// toolDefs is the tools/list payload — the memory organ surface exposed to any
-// MCP host. Schemas mirror the Zekra REST contract (contracts/tools.md).
-type prop map[string]any
+// Tool definitions mirrored verbatim from the server's shared MCP surface
+// (github.com/togo-framework/brain/mcptools tools.go + notes.go). Keep in sync;
+// at startup the CLI prefers the server's live list from GET /api/mcp/tools.
 
-func obj(required []string, props map[string]any) map[string]any {
-	// JSON Schema requires `required` to be an array — never null. Tools with no
-	// required fields must emit [], or strict MCP clients (Claude Code's Zod
-	// validator) reject the whole tools/list with "expected array, received null".
-	if required == nil {
-		required = []string{}
+type prop = map[string]any
+
+func obj(props map[string]any, required ...string) map[string]any {
+	m := map[string]any{"type": "object", "properties": props}
+	if len(required) > 0 {
+		m["required"] = required
 	}
-	return map[string]any{"type": "object", "properties": props, "required": required}
+	return m
 }
 
 var toolDefs = []map[string]any{
 	{
-		"name":        "memory_recall",
-		"description": "Hybrid recall (vector + BM25 fused with RRF, reranked, 1-hop entity expansion). Read the brain BEFORE answering.",
-		"inputSchema": obj([]string{"namespace", "query"}, map[string]any{
-			"namespace":       prop{"type": "string", "description": "brain to read"},
-			"query":           prop{"type": "string", "description": "keyword-forward query"},
-			"limit":           prop{"type": "number", "description": "max results (default 8)"},
-			"expand_entities": prop{"type": "boolean"},
-			"min_importance":  prop{"type": "number"},
-		}),
+		"name": "memory_retain",
+		"description": "Write a memory (runs the §4.1 pipeline: embed → neighbor recall → " +
+			"ADD/UPDATE/INVALIDATE/NOOP decision → importance → insert hot/episodic → entity graph). " +
+			"The write decision is internal; callers do not choose it.",
+		"inputSchema": obj(prop{
+			"namespace":       prop{"type": "string", "description": "memory scope (write-checked against grants)"},
+			"content":         prop{"type": "string", "description": "raw or distilled text (Arabic/English)"},
+			"source_kind":     prop{"type": "string", "enum": []string{"claude_code", "coder_run", "whatsapp", "slack", "chat", "manual"}},
+			"source_ref":      prop{"type": "string", "description": "session/thread/run id (provenance)"},
+			"importance_hint": prop{"type": "number", "description": "[0,1] explicit salience flag, blended not authoritative"},
+			"visibility":      prop{"type": "string", "enum": []string{"private", "team", "global"}, "default": "private"},
+		}, "namespace", "content", "source_kind"),
 	},
 	{
-		"name":        "memory_retain",
-		"description": "Store a memory (runs the ADD/UPDATE/INVALIDATE/NOOP write-decision, embeds + BM25 + entity graph). Retain what's new.",
-		"inputSchema": obj([]string{"namespace", "content"}, map[string]any{
-			"namespace":       prop{"type": "string"},
-			"content":         prop{"type": "string"},
-			"source_kind":     prop{"type": "string"},
-			"source_ref":      prop{"type": "string"},
-			"visibility":      prop{"type": "string"},
-			"importance_hint": prop{"type": "number", "description": "[0,1] salience flag, blended not authoritative"},
-		}),
+		"name": "memory_recall",
+		"description": "Hybrid retrieval (runs §4.2): scoped vector + BM25 fused with RRF + salience, " +
+			"reranked (bge-reranker-v2-m3), optional 1-hop entity expansion. Hot tier only; p95 < 300ms.",
+		"inputSchema": obj(prop{
+			"namespace":            prop{"type": "string", "description": "memory scope (read-checked against grants)"},
+			"query":                prop{"type": "string", "description": "natural-language query (vector + BM25)"},
+			"limit":                prop{"type": "integer", "description": "final N after rerank (default 8, max 50)"},
+			"expand_entities":      prop{"type": "boolean", "description": "1-hop spreading activation (default true)"},
+			"min_importance":       prop{"type": "number", "description": "optional floor filter"},
+			"types":                prop{"type": "array", "items": prop{"type": "string"}, "description": "narrow to these memory_type values (e.g. [\"venture\",\"spec\",\"goal\"]) — cuts noise from bulk ingest types like git-activity"},
+			"exclude_source_kinds": prop{"type": "array", "items": prop{"type": "string"}, "description": "drop candidates from these source_kind streams (e.g. [\"flowos_github_activity\"]) to muffle high-volume noise"},
+		}, "namespace", "query"),
+	},
+	{
+		"name": "memory_recall_archive",
+		"description": "Explicit cold-tier deep recall (the ONLY tool that reads Iceberg/Parquet cold " +
+			"storage). Higher latency, never folded into memory_recall. Phase 2 — stubbed until cold demotion exists.",
+		"inputSchema": obj(prop{
+			"namespace": prop{"type": "string"},
+			"query":     prop{"type": "string"},
+			"since":     prop{"type": "string", "description": "RFC-3339 lower bound for the archive scan"},
+			"until":     prop{"type": "string", "description": "RFC-3339 upper bound for the archive scan"},
+		}, "namespace", "query"),
 	},
 	{
 		"name":        "memory_get",
-		"description": "Fetch one memory by id with full provenance.",
-		"inputSchema": obj([]string{"namespace", "id"}, map[string]any{
-			"namespace": prop{"type": "string"}, "id": prop{"type": "string"}}),
+		"description": "Fetch a single memory by id with full provenance (source_kind, source_ref, valid_at, invalid_at, access_count, metadata). Point lookup; read-checked.",
+		"inputSchema": obj(prop{
+			"namespace": prop{"type": "string"},
+			"id":        prop{"type": "string", "description": "UUID of the memory"},
+		}, "namespace", "id"),
+	},
+	{
+		"name":        "memory_dedup",
+		"description": "Soft-invalidate duplicate memories in a namespace (same source_ref → keep newest only). Optional sourceKind narrows to one ingest stream (e.g. \"flowos_github_activity\"). Returns the count of rows invalidated. Write-checked.",
+		"inputSchema": obj(prop{
+			"namespace":  prop{"type": "string"},
+			"sourceKind": prop{"type": "string", "description": "optional; empty = all source_kinds"},
+		}, "namespace"),
 	},
 	{
 		"name":        "memory_forget",
-		"description": "Invalidate a memory by id (soft-delete; stays for archive recall).",
-		"inputSchema": obj([]string{"namespace", "id"}, map[string]any{
-			"namespace": prop{"type": "string"}, "id": prop{"type": "string"}, "reason": prop{"type": "string"}}),
-	},
-	{
-		"name":        "memory_edit",
-		"description": "Edit a memory by id — change content (re-embeds), importance, or metadata.",
-		"inputSchema": obj([]string{"namespace", "id"}, map[string]any{
-			"namespace": prop{"type": "string"}, "id": prop{"type": "string"}, "content": prop{"type": "string"},
-			"importance": prop{"type": "number"}, "metadata": prop{"type": "object"}}),
-	},
-	{
-		"name":        "memory_gaps",
-		"description": "List knowledge gaps (queries that recalled nothing) for a brain.",
-		"inputSchema": obj(nil, map[string]any{
+		"description": "Soft-invalidate a memory (sets invalid_at=now(); never hard-deletes — history stays queryable). Write-checked.",
+		"inputSchema": obj(prop{
 			"namespace": prop{"type": "string"},
-			"status":    prop{"type": "string", "enum": []string{"open", "indexed", "dismissed", "all"}},
-			"limit":     prop{"type": "number"}}),
+			"id":        prop{"type": "string", "description": "UUID of the memory"},
+			"reason":    prop{"type": "string", "description": "optional; recorded in metadata"},
+		}, "namespace", "id"),
+	},
+	{
+		"name":        "memory_share",
+		"description": "Grant a namespace to another agent (upserts namespace_grants). Caller must already hold a grant on the namespace.",
+		"inputSchema": obj(prop{
+			"namespace":        prop{"type": "string"},
+			"grantee_agent_id": prop{"type": "string", "description": "the agent receiving access"},
+			"can_read":         prop{"type": "boolean", "default": true},
+			"can_write":        prop{"type": "boolean", "default": false},
+		}, "namespace", "grantee_agent_id"),
+	},
+	{
+		"name": "graph_traverse",
+		"description": "Walk the entity graph outward from a named entity (multi-hop). Answers relational " +
+			"questions similarity search cannot, e.g. 'which people work on ventures in the Turif portfolio'. " +
+			"Returns each reachable entity with its type, depth and the path walked to reach it.",
+		"inputSchema": obj(prop{
+			"namespace": prop{"type": "string"},
+			"entity":    prop{"type": "string", "description": "exact entity name to start from"},
+			"depth":     prop{"type": "integer", "description": "hops, default 2, max 6"},
+			"relations": prop{"type": "array", "items": prop{"type": "string"}, "description": "restrict to these relation types (see graph_ontology)"},
+			"types":     prop{"type": "array", "items": prop{"type": "string"}, "description": "only return these entity types"},
+			"direction": prop{"type": "string", "enum": []string{"out", "in", "both"}},
+			"asOf":      prop{"type": "string", "description": "RFC3339 — walk the graph as it stood then"},
+			"limit":     prop{"type": "integer"},
+		}, "namespace", "entity"),
+	},
+	{
+		"name": "graph_spine",
+		"description": "EVERYTHING about one venture (or portfolio, repo, person) in ONE call, grouped by role — " +
+			"repos, members, recent activity, feed, goals, OKRs, roadmap, code modules, docs, learnings, issues, " +
+			"meetings, channels. Each group reports the TRUE total next to a capped sample, so a short list is " +
+			"never mistaken for the whole population. Use `window` (\"7d\", \"2w\") for time-boxed questions such as " +
+			"'what happened on venture X last week' — the window binds the event-bearing roles (activity, meeting, " +
+			"channel, feed) and deliberately leaves structural roles alone. Prefer this over several graph_traverse calls.",
+		"inputSchema": obj(prop{
+			"namespace": prop{"type": "string"},
+			"entity":    prop{"type": "string", "description": "venture/portfolio name (or any entity name or id)"},
+			"depth":     prop{"type": "integer", "description": "hops, default 2 (use 3 for a portfolio), max 4"},
+			"hubs":      prop{"type": "array", "items": prop{"type": "string"}, "description": "entity types expanded past hop 1; default repo,venture,feed,portfolio"},
+			"roles":     prop{"type": "array", "items": prop{"type": "string"}, "description": "only return these role groups"},
+			"perGroup":  prop{"type": "integer", "description": "cap per group, default 10, max 200 (total is always the true count)"},
+			"window":    prop{"type": "string", "description": "relative window: 24h, 7d, 2w, 3m"},
+			"since":     prop{"type": "string", "description": "RFC3339 lower bound (overrides window)"},
+			"until":     prop{"type": "string", "description": "RFC3339 upper bound"},
+			"timeRoles": prop{"type": "array", "items": prop{"type": "string"}, "description": "roles the window applies to; [\"*\"] = all"},
+		}, "namespace", "entity"),
+	},
+	{
+		"name": "graph_neighbors",
+		"description": "Immediate typed relationships of one entity, each with its relation, direction and a " +
+			"human-readable fact. Use to explain HOW something is connected.",
+		"inputSchema": obj(prop{
+			"namespace": prop{"type": "string"},
+			"entity":    prop{"type": "string"},
+			"asOf":      prop{"type": "string", "description": "RFC3339 — relationships valid at that instant"},
+		}, "namespace", "entity"),
+	},
+	{
+		"name":        "graph_path",
+		"description": "Shortest relationship path between two entities — answers 'how are these two connected?'.",
+		"inputSchema": obj(prop{
+			"namespace": prop{"type": "string"},
+			"from":      prop{"type": "string"},
+			"to":        prop{"type": "string"},
+			"maxDepth":  prop{"type": "integer", "description": "default 4, max 6"},
+		}, "namespace", "from", "to"),
+	},
+	{
+		"name": "graph_ontology",
+		"description": "The brain's declared shape: entity types and relation types with live counts. Call this " +
+			"FIRST to discover which entity/relation names graph_traverse will accept.",
+		"inputSchema": obj(prop{"namespace": prop{"type": "string"}}, "namespace"),
+	},
+	{
+		"name": "memory_gaps",
+		"description": "List knowledge gaps — questions the brain couldn't answer (recall came back empty), " +
+			"deduped and counted. See what's missing, then index it (memory_retain) and memory_resolve_gap.",
+		"inputSchema": obj(prop{
+			"namespace": prop{"type": "string", "description": "optional scope filter"},
+			"status":    prop{"type": "string", "enum": []string{"open", "indexed", "dismissed", "all"}, "description": "default: open+indexed"},
+			"limit":     prop{"type": "integer", "description": "default 100"},
+		}),
 	},
 	{
 		"name":        "memory_resolve_gap",
-		"description": "Resolve a knowledge gap after indexing the missing knowledge, or dismiss it.",
-		"inputSchema": obj([]string{"id", "status"}, map[string]any{
-			"id": prop{"type": "number"}, "status": prop{"type": "string", "enum": []string{"indexed", "dismissed", "open"}},
-			"resolution": prop{"type": "string"}}),
+		"description": "Resolve a knowledge gap after indexing the missing knowledge (status=indexed) or to drop it (dismissed).",
+		"inputSchema": obj(prop{
+			"id":         prop{"type": "integer", "description": "the gap id from memory_gaps"},
+			"status":     prop{"type": "string", "enum": []string{"indexed", "dismissed", "open"}},
+			"resolution": prop{"type": "string", "description": "optional note"},
+		}, "id", "status"),
 	},
 	{
 		"name":        "brain_list",
-		"description": "List brains (namespaces) this token can read, with memory counts.",
-		"inputSchema": obj(nil, map[string]any{}),
+		"description": "List the brains (namespaces) with their memory counts — the top level of what's stored.",
+		"inputSchema": obj(prop{}),
 	},
 	{
 		"name":        "brain_details",
-		"description": "Detail for one brain: memory count, breakdown by type/source, open gaps, recall activity.",
-		"inputSchema": obj([]string{"namespace"}, map[string]any{"namespace": prop{"type": "string"}}),
+		"description": "Detailed view of one brain (namespace): memory count, breakdown by type and source, open gaps, recall activity, first/last dates.",
+		"inputSchema": obj(prop{
+			"namespace": prop{"type": "string"},
+		}, "namespace"),
 	},
 	{
-		"name":        "brain_create",
-		"description": "Create a new empty named brain (seeds a genesis marker so the namespace exists and is connectable).",
-		"inputSchema": obj([]string{"name"}, map[string]any{
-			"name":        prop{"type": "string", "description": "the new brain's namespace"},
-			"description": prop{"type": "string"}}),
+		"name":        "memory_edit",
+		"description": "Edit an existing memory by id — change its content (re-embeds), importance, or metadata. Namespace + id required.",
+		"inputSchema": obj(prop{
+			"namespace":  prop{"type": "string"},
+			"id":         prop{"type": "string", "description": "memory UUID"},
+			"content":    prop{"type": "string", "description": "new content (optional; re-embeds)"},
+			"importance": prop{"type": "number", "description": "0..1 (optional)"},
+			"metadata":   prop{"type": "object", "description": "replacement metadata (optional)"},
+		}, "namespace", "id"),
 	},
 	{
 		"name":        "brain_delete",
-		"description": "Delete a brain and ALL its memories. Requires confirm=true.",
-		"inputSchema": obj([]string{"namespace", "confirm"}, map[string]any{
-			"namespace": prop{"type": "string"}, "confirm": prop{"type": "boolean"}}),
+		"description": "DELETE a whole brain (namespace) and all its memories — destructive. `confirm` MUST equal the namespace.",
+		"inputSchema": obj(prop{
+			"namespace": prop{"type": "string"},
+			"confirm":   prop{"type": "string", "description": "must equal namespace to proceed"},
+		}, "namespace", "confirm"),
 	},
 	{
 		"name":        "brain_grant",
-		"description": "ACL (admin): grant an agent/token read and/or write on a brain.",
-		"inputSchema": obj([]string{"agentId", "namespace"}, map[string]any{
-			"agentId": prop{"type": "string"}, "namespace": prop{"type": "string"},
-			"canRead": prop{"type": "boolean"}, "canWrite": prop{"type": "boolean"}}),
+		"description": "ACL (admin): grant an agent/token read and/or write access to a brain. Upserts the grant.",
+		"inputSchema": obj(prop{
+			"agentId":   prop{"type": "string", "description": "the agent identity the token maps to"},
+			"namespace": prop{"type": "string", "description": "the brain to grant"},
+			"canRead":   prop{"type": "boolean", "default": true},
+			"canWrite":  prop{"type": "boolean", "default": false},
+		}, "agentId", "namespace"),
 	},
 	{
 		"name":        "brain_revoke_grant",
-		"description": "ACL (admin): revoke an agent's grant on a brain.",
-		"inputSchema": obj([]string{"agentId", "namespace"}, map[string]any{
-			"agentId": prop{"type": "string"}, "namespace": prop{"type": "string"}}),
+		"description": "ACL (admin): remove an agent's access to a brain.",
+		"inputSchema": obj(prop{
+			"agentId":   prop{"type": "string"},
+			"namespace": prop{"type": "string"},
+		}, "agentId", "namespace"),
 	},
 	{
 		"name":        "brain_create_token",
-		"description": "ACL (admin): mint an access token for an agent identity (optionally admin). The holder sets ZEKRA_TOKEN.",
-		"inputSchema": obj([]string{"agentId"}, map[string]any{
-			"agentId": prop{"type": "string"}, "label": prop{"type": "string"}, "isAdmin": prop{"type": "boolean"}}),
+		"description": "ACL (admin): mint an access token for an agent identity (optionally admin). Grant it brains with brain_grant; the holder sets ZEKRA_TOKEN.",
+		"inputSchema": obj(prop{
+			"agentId": prop{"type": "string"},
+			"label":   prop{"type": "string"},
+			"isAdmin": prop{"type": "boolean", "default": false},
+		}, "agentId"),
 	},
 	{
 		"name":        "brain_tokens",
 		"description": "ACL (admin): list access tokens with their per-brain grants.",
-		"inputSchema": obj(nil, map[string]any{"includeRevoked": prop{"type": "boolean"}}),
+		"inputSchema": obj(prop{
+			"includeRevoked": prop{"type": "boolean", "default": false},
+		}),
 	},
 	{
 		"name":        "brain_chat",
-		"description": "Ask the brain a question in natural language (RAG over one namespace).",
-		"inputSchema": obj([]string{"namespace", "message"}, map[string]any{
-			"namespace": prop{"type": "string"}, "message": prop{"type": "string"}, "topK": prop{"type": "number"}}),
+		"description": "Live agent: ask a selected brain a question. It recalls the brain's relevant memories and answers grounded ONLY in them, returning the answer + the memories it cited (footprint). Says the brain has no memory of it rather than guessing.",
+		"inputSchema": obj(prop{
+			"namespace": prop{"type": "string"},
+			"message":   prop{"type": "string"},
+			"topK":      prop{"type": "integer", "description": "memories to ground on (default 8)"},
+		}, "namespace", "message"),
 	},
 	{
 		"name":        "secret_list",
-		"description": "List a brain's secret names (values stay hidden).",
-		"inputSchema": obj([]string{"namespace"}, map[string]any{"namespace": prop{"type": "string"}}),
+		"description": "Secrets vault: list secret names + masked hints for a brain (NO values). Needs read on the brain.",
+		"inputSchema": obj(prop{
+			"namespace": prop{"type": "string"},
+		}, "namespace"),
 	},
 	{
 		"name":        "secret_store",
-		"description": "Store/replace a secret in a brain's vault (AES-256, write access required).",
-		"inputSchema": obj([]string{"namespace", "name", "value"}, map[string]any{
-			"namespace": prop{"type": "string"}, "name": prop{"type": "string"}, "value": prop{"type": "string"}, "kind": prop{"type": "string"}}),
+		"description": "Secrets vault: store/update an encrypted secret under a name for a brain. Needs write on the brain. Secrets found in retained content are ALSO auto-captured + redacted; use this for explicit stores.",
+		"inputSchema": obj(prop{
+			"namespace": prop{"type": "string"},
+			"name":      prop{"type": "string"},
+			"value":     prop{"type": "string"},
+			"kind":      prop{"type": "string", "description": "api_key|password|env|token|private_key|connection_string|generic"},
+		}, "namespace", "name", "value"),
 	},
 	{
 		"name":        "secret_reveal",
-		"description": "Decrypt and return a secret value (write/admin on the brain required).",
-		"inputSchema": obj([]string{"namespace", "name"}, map[string]any{
-			"namespace": prop{"type": "string"}, "name": prop{"type": "string"}}),
+		"description": "Secrets vault: decrypt and return a secret's value. Requires WRITE/admin on the brain (stricter than read). Use to recover a key between sessions.",
+		"inputSchema": obj(prop{
+			"namespace": prop{"type": "string"},
+			"name":      prop{"type": "string"},
+		}, "namespace", "name"),
 	},
 	{
 		"name":        "secret_delete",
-		"description": "Delete a secret from a brain's vault.",
-		"inputSchema": obj([]string{"namespace", "name"}, map[string]any{
-			"namespace": prop{"type": "string"}, "name": prop{"type": "string"}}),
+		"description": "Secrets vault: delete a secret from a brain. Needs write on the brain.",
+		"inputSchema": obj(prop{
+			"namespace": prop{"type": "string"},
+			"name":      prop{"type": "string"},
+		}, "namespace", "name"),
 	},
 	{
-		"name":        "datasource_list",
-		"description": "List a brain's configured connectors (github/sql/crawler/markdown/webhook) with status + doc counts.",
-		"inputSchema": obj([]string{"namespace"}, map[string]any{"namespace": prop{"type": "string"}}),
+		"name": "datasource_list",
+		"description": "Data sources: list a brain's configured connectors (text/markdown/crawler/github/sql/webhook) " +
+			"with status, doc counts and last sync. Needs read on the brain.",
+		"inputSchema": obj(prop{
+			"namespace": prop{"type": "string"},
+		}, "namespace"),
 	},
 	{
-		"name":        "datasource_create",
-		"description": "Create a connector bound to a brain. On sync it pulls docs, chunks, and retains them.",
-		"inputSchema": obj([]string{"namespace", "kind", "name"}, map[string]any{
+		"name": "datasource_create",
+		"description": "Data sources: add a connector to a brain. kind ∈ text|markdown|crawler|github|sql|webhook. " +
+			"config is per-kind JSON (text:{content,title}, crawler:{url}, github:{repo,branch,path,ext,token}, " +
+			"sql:{driver,dsn,query,refColumn,titleColumn}, webhook: a shared secret is auto-generated). Needs write.",
+		"inputSchema": obj(prop{
 			"namespace": prop{"type": "string"},
 			"kind":      prop{"type": "string", "enum": []string{"text", "markdown", "crawler", "github", "sql", "webhook"}},
-			"name":      prop{"type": "string"}, "config": prop{"type": "object"}}),
+			"name":      prop{"type": "string"},
+			"config":    prop{"type": "object", "description": "per-kind connector config"},
+		}, "namespace", "kind", "name"),
 	},
 	{
 		"name":        "datasource_sync",
-		"description": "Run a connector now (pull + retain). Returns {ingested}.",
-		"inputSchema": obj([]string{"id"}, map[string]any{"id": prop{"type": "string"}}),
+		"description": "Data sources: run a connector now — Fetch its documents, chunk and retain them into the brain. Returns ingested count. Webhook sources are push-only (cannot be synced). Needs write.",
+		"inputSchema": obj(prop{
+			"id": prop{"type": "string", "description": "datasource id from datasource_list"},
+		}, "id"),
 	},
 	{
 		"name":        "datasource_delete",
-		"description": "Delete a connector.",
-		"inputSchema": obj([]string{"id"}, map[string]any{"id": prop{"type": "string"}}),
+		"description": "Data sources: delete a connector from a brain (its already-ingested memories stay). Needs write.",
+		"inputSchema": obj(prop{
+			"id": prop{"type": "string", "description": "datasource id from datasource_list"},
+		}, "id"),
 	},
+}
+
+var noteToolDefs = []map[string]any{
+	{
+		"name": "note_create",
+		"description": "Create a markdown note in a brain. The note is chunked and indexed into the brain's " +
+			"memories (source_kind=note), so memory_recall finds it. Returns the note with its id and version.",
+		"inputSchema": obj(prop{
+			"namespace": prop{"type": "string", "description": "the brain to create the note in"},
+			"title":     prop{"type": "string"},
+			"body":      prop{"type": "string", "description": "markdown"},
+			"tags":      prop{"type": "array", "items": prop{"type": "string"}},
+			"pinned":    prop{"type": "boolean"},
+		}, "namespace", "title"),
+	},
+	{
+		"name": "note_update",
+		"description": "Update a note: any of title, body (replaces the whole body), tags, pinned, archived. " +
+			"Pass the version you read to avoid overwriting someone else's edit (a mismatch returns the current copy).",
+		"inputSchema": obj(prop{
+			"id":       prop{"type": "string"},
+			"title":    prop{"type": "string"},
+			"body":     prop{"type": "string", "description": "markdown; replaces the body"},
+			"tags":     prop{"type": "array", "items": prop{"type": "string"}},
+			"pinned":   prop{"type": "boolean"},
+			"archived": prop{"type": "boolean"},
+			"version":  prop{"type": "integer", "description": "optional optimistic-concurrency check"},
+		}, "id"),
+	},
+	{
+		"name":        "note_append",
+		"description": "Append markdown to the end of a note (as a new paragraph). Safer than note_update for adding to a running log.",
+		"inputSchema": obj(prop{
+			"id":   prop{"type": "string"},
+			"text": prop{"type": "string", "description": "markdown to append"},
+		}, "id", "text"),
+	},
+	{
+		"name":        "note_get",
+		"description": "Fetch one note by id, with its full markdown body, tags and version.",
+		"inputSchema": obj(prop{"id": prop{"type": "string"}}, "id"),
+	},
+	{
+		"name": "note_search",
+		"description": "Find notes whose title or body contains the query text (optionally in one brain / with a tag). " +
+			"For meaning-based search across notes and every other memory, use memory_recall.",
+		"inputSchema": obj(prop{
+			"query":     prop{"type": "string"},
+			"namespace": prop{"type": "string", "description": "optional; default = every brain you can read"},
+			"tag":       prop{"type": "string"},
+			"limit":     prop{"type": "integer", "description": "default 20, max 200"},
+		}, "query"),
+	},
+	{
+		"name":        "note_list",
+		"description": "List notes, newest first (pinned first). Paginate with the returned nextCursor.",
+		"inputSchema": obj(prop{
+			"namespace": prop{"type": "string", "description": "optional; default = every brain you can read"},
+			"tag":       prop{"type": "string"},
+			"archived":  prop{"type": "boolean", "description": "include archived notes"},
+			"limit":     prop{"type": "integer", "description": "default 50, max 200"},
+			"cursor":    prop{"type": "string"},
+		}),
+	},
+	{
+		"name":        "note_delete",
+		"description": "Delete a note. It is tombstoned (restorable from the console) and its memories are invalidated, never hard-deleted.",
+		"inputSchema": obj(prop{"id": prop{"type": "string"}}, "id"),
+	},
+}
+
+// cliExtraToolDefs are tools the server is rolling out that the CLI already
+// dispatches. When the server publishes GET /api/mcp/tools its schema wins.
+var cliExtraToolDefs = []map[string]any{
+	{
+		"name":        "brain_create",
+		"description": "Create a new empty brain (namespace) owned by the caller. Name: 1-63 of a-z 0-9 _ . - starting with a letter or digit.",
+		"inputSchema": obj(prop{
+			"namespace":   prop{"type": "string", "description": "the new brain's name"},
+			"description": prop{"type": "string"},
+		}, "namespace"),
+	},
+}
+
+// builtinTools is the full built-in tools/list (server order, notes, extras).
+func builtinTools() []map[string]any {
+	out := make([]map[string]any, 0, len(toolDefs)+len(noteToolDefs)+len(cliExtraToolDefs))
+	out = append(out, toolDefs...)
+	out = append(out, noteToolDefs...)
+	return append(out, cliExtraToolDefs...)
+}
+
+// knownTool reports whether the CLI can dispatch name.
+func knownTool(name string) bool {
+	for _, t := range builtinTools() {
+		if t["name"] == name {
+			return true
+		}
+	}
+	return false
 }
