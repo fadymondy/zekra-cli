@@ -10,7 +10,7 @@
 //
 // Config resolution order (highest first): flags → environment → ~/.cabrain/config.json.
 //
-//	CABRAIN_API_URL            base URL of the CaBrain app (default https://cabrain.fadymondy.com)
+//	CABRAIN_API_URL            base URL of the CaBrain app (default https://cabrain-app.fadymondy.com)
 //	CABRAIN_TOKEN              ACL token (X-Cabrain-Token) → per-brain read/write
 //	CABRAIN_AGENT_ID           this session's agent identity (X-Agent-Id)
 //	CABRAIN_DEFAULT_NAMESPACE  bind the MCP session to one brain
@@ -30,7 +30,12 @@ import (
 	"time"
 )
 
-const defaultURL = "https://cabrain.fadymondy.com"
+// defaultURL is the CaBrain app (console + REST + MCP API). cabrain.fadymondy.com is the
+// marketing landing since 2026-09-14; legacyURL maps configs saved before then onto the app.
+const (
+	defaultURL = "https://cabrain-app.fadymondy.com"
+	legacyURL  = "https://cabrain.fadymondy.com"
+)
 
 // version is stamped at build time: -ldflags "-X main.version=v0.1.0".
 var version = "dev"
@@ -67,10 +72,11 @@ func loadConfig() Config {
 	if v := os.Getenv("CABRAIN_DEFAULT_NAMESPACE"); v != "" {
 		c.Namespace = v
 	}
-	if c.URL == "" {
+	c.URL = strings.TrimRight(c.URL, "/")
+	// Empty, or saved by `cabrain auth login` before the app moved off the landing domain.
+	if c.URL == "" || c.URL == legacyURL {
 		c.URL = defaultURL
 	}
-	c.URL = strings.TrimRight(c.URL, "/")
 	return c
 }
 

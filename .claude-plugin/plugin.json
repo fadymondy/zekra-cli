@@ -25,8 +25,8 @@
     "api_url": {
       "type": "string",
       "title": "CaBrain API URL",
-      "description": "Base URL of the CaBrain server (default https://cabrain.fadymondy.com).",
-      "default": "https://cabrain.fadymondy.com"
+      "description": "Base URL of the CaBrain app (default https://cabrain-app.fadymondy.com).",
+      "default": "https://cabrain-app.fadymondy.com"
     },
     "api_token": {
       "type": "string",

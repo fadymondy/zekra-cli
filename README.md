@@ -18,7 +18,7 @@ from zero to a working brain in two commands.
 ## Install
 
 ```sh
-curl -fsSL https://cabrain.fadymondy.com/install.sh | sh
+curl -fsSL https://cabrain-app.fadymondy.com/install.sh | sh
 ```
 
 or, with Go:
@@ -36,7 +36,7 @@ npm i -g cabrain-cli
 **Upgrade** to the latest anytime (npm / go / binary aware):
 
 ```sh
-curl -fsSL https://cabrain.fadymondy.com/upgrade.sh | sh
+curl -fsSL https://cabrain-app.fadymondy.com/upgrade.sh | sh
 ```
 
 ## Use it as a Claude Code plugin
@@ -105,7 +105,7 @@ One-liner that installs, logs in, and wires a client in a single shot:
 
 ```sh
 CABRAIN_TOKEN=cbt_… CABRAIN_CLIENT=claude-desktop \
-  sh -c "$(curl -fsSL https://cabrain.fadymondy.com/install.sh)"
+  sh -c "$(curl -fsSL https://cabrain-app.fadymondy.com/install.sh)"
 ```
 
 ## Quick start
@@ -173,7 +173,7 @@ Resolution order (highest wins): **flags → environment → `~/.cabrain/config.
 
 | env var | meaning |
 |---|---|
-| `CABRAIN_API_URL` | base URL of the CaBrain app (default `https://cabrain.fadymondy.com`) |
+| `CABRAIN_API_URL` | base URL of the CaBrain app (default `https://cabrain-app.fadymondy.com`) |
 | `CABRAIN_TOKEN` | ACL token, sent as `X-Cabrain-Token` (per-brain read/write; admin bypasses grants) |
 | `CABRAIN_AGENT_ID` | this session's agent identity, sent as `X-Agent-Id` |
 | `CABRAIN_DEFAULT_NAMESPACE` | bind the MCP session to one brain (tools default `namespace` to it) |
