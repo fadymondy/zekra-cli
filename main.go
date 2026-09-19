@@ -1,19 +1,19 @@
-// Command cabrain is the CaBrain memory CLI + MCP installer.
+// Command zekra is the Zekra memory CLI + MCP installer.
 //
 // It does two jobs:
 //
-//  1. It IS a Model Context Protocol server (`cabrain mcp`) — a thin stdio
-//     adapter over a running CaBrain app's REST API, so Claude Code, Claude
+//  1. It IS a Model Context Protocol server (`zekra mcp`) — a thin stdio
+//     adapter over a running Zekra app's REST API, so Claude Code, Claude
 //     Desktop, Codex, Gemini CLI, Cursor, and any MCP client can use the brain.
-//  2. It wires that server into those clients (`cabrain install <client>`) and
-//     drives the brain from the shell (`cabrain brain create`, `recall`, …).
+//  2. It wires that server into those clients (`zekra install <client>`) and
+//     drives the brain from the shell (`zekra brain create`, `recall`, …).
 //
-// Config resolution order (highest first): flags → environment → ~/.cabrain/config.json.
+// Config resolution order (highest first): flags → environment → ~/.zekra/config.json.
 //
-//	CABRAIN_API_URL            base URL of the CaBrain app (default https://cabrain-app.fadymondy.com)
-//	CABRAIN_TOKEN              ACL token (X-Cabrain-Token) → per-brain read/write
-//	CABRAIN_AGENT_ID           this session's agent identity (X-Agent-Id)
-//	CABRAIN_DEFAULT_NAMESPACE  bind the MCP session to one brain
+//	ZEKRA_API_URL            base URL of the Zekra app (default https://app.zekra.dev)
+//	ZEKRA_TOKEN              ACL token (X-Zekra-Token) → per-brain read/write
+//	ZEKRA_AGENT_ID           this session's agent identity (X-Agent-Id)
+//	ZEKRA_DEFAULT_NAMESPACE  bind the MCP session to one brain
 package main
 
 import (
@@ -30,17 +30,21 @@ import (
 	"time"
 )
 
-// defaultURL is the CaBrain app (console + REST + MCP API). cabrain.fadymondy.com is the
-// marketing landing since 2026-09-14; legacyURL maps configs saved before then onto the app.
-const (
-	defaultURL = "https://cabrain-app.fadymondy.com"
-	legacyURL  = "https://cabrain.fadymondy.com"
-)
+// defaultURL is the Zekra app (console + REST + MCP API). zekra.dev is the marketing
+// landing; legacyURLs maps configs saved against the landing or the pre-rename
+// CaBrain hosts onto the app.
+const defaultURL = "https://app.zekra.dev"
+
+var legacyURLs = map[string]bool{
+	"https://zekra.dev":                 true,
+	"https://cabrain.fadymondy.com":     true, // compat: pre-rename landing
+	"https://cabrain-app.fadymondy.com": true, // compat: pre-rename app
+}
 
 // version is stamped at build time: -ldflags "-X main.version=v0.1.0".
 var version = "dev"
 
-// Config is the persisted CLI/MCP configuration (~/.cabrain/config.json).
+// Config is the persisted CLI/MCP configuration (~/.zekra/config.json).
 type Config struct {
 	URL       string `json:"url,omitempty"`
 	Token     string `json:"token,omitempty"`
@@ -50,7 +54,21 @@ type Config struct {
 
 func configPath() string {
 	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".zekra", "config.json")
+}
+
+// legacyConfigPath is the pre-rename (CaBrain) config location, read as a fallback.
+func legacyConfigPath() string {
+	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".cabrain", "config.json")
+}
+
+// getenv returns ZEKRA_<name>, falling back to the pre-rename CABRAIN_<name>.
+func getenv(name string) string {
+	if v := os.Getenv("ZEKRA_" + name); v != "" {
+		return v
+	}
+	return os.Getenv("CABRAIN_" + name)
 }
 
 // loadConfig reads the config file then overlays environment variables. Flags,
@@ -59,22 +77,24 @@ func loadConfig() Config {
 	var c Config
 	if b, err := os.ReadFile(configPath()); err == nil {
 		_ = json.Unmarshal(b, &c)
+	} else if b, err := os.ReadFile(legacyConfigPath()); err == nil {
+		_ = json.Unmarshal(b, &c)
 	}
-	if v := os.Getenv("CABRAIN_API_URL"); v != "" {
+	if v := getenv("API_URL"); v != "" {
 		c.URL = v
 	}
-	if v := os.Getenv("CABRAIN_TOKEN"); v != "" {
+	if v := getenv("TOKEN"); v != "" {
 		c.Token = v
 	}
-	if v := os.Getenv("CABRAIN_AGENT_ID"); v != "" {
+	if v := getenv("AGENT_ID"); v != "" {
 		c.AgentID = v
 	}
-	if v := os.Getenv("CABRAIN_DEFAULT_NAMESPACE"); v != "" {
+	if v := getenv("DEFAULT_NAMESPACE"); v != "" {
 		c.Namespace = v
 	}
 	c.URL = strings.TrimRight(c.URL, "/")
-	// Empty, or saved by `cabrain auth login` before the app moved off the landing domain.
-	if c.URL == "" || c.URL == legacyURL {
+	// Empty, or saved against the landing / pre-rename hosts.
+	if c.URL == "" || legacyURLs[c.URL] {
 		c.URL = defaultURL
 	}
 	return c
@@ -118,7 +138,8 @@ func (c *client) do(method, path string, q url.Values, payload any) (map[string]
 		req.Header.Set("Content-Type", "application/json")
 	}
 	if c.token != "" {
-		req.Header.Set("X-Cabrain-Token", c.token)
+		req.Header.Set("X-Zekra-Token", c.token)
+		req.Header.Set("X-Cabrain-Token", c.token) // compat: pre-rename servers
 	}
 	if c.agent != "" {
 		req.Header.Set("X-Agent-Id", c.agent)
@@ -168,8 +189,8 @@ func main() {
 	switch cmd {
 	// --- MCP server + installer (the core helper) ---
 	case "mcp":
-		// `cabrain mcp`           → run the stdio server (what clients invoke)
-		// `cabrain mcp install …` → wire it into a client
+		// `zekra mcp`           → run the stdio server (what clients invoke)
+		// `zekra mcp install …` → wire it into a client
 		if len(rest) > 0 {
 			switch rest[0] {
 			case "install", "add", "setup":
@@ -179,7 +200,7 @@ func main() {
 			case "uninstall", "remove":
 				err = cmdUninstall(rest[1:])
 			default:
-				err = fmt.Errorf("unknown: cabrain mcp %s (try: install | print | uninstall)", rest[0])
+				err = fmt.Errorf("unknown: zekra mcp %s (try: install | print | uninstall)", rest[0])
 			}
 		} else {
 			runMCP(loadConfig()) // blocks until stdin closes
@@ -214,7 +235,7 @@ func main() {
 		err = cmdHook(rest)
 
 	case "version", "--version", "-v":
-		fmt.Printf("cabrain %s\n", version)
+		fmt.Printf("zekra %s\n", version)
 	case "help", "-h", "--help":
 		usage()
 	default:
@@ -231,7 +252,7 @@ func main() {
 // cmdAuth routes the auth.* group.
 func cmdAuth(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: cabrain auth <login|logout|token|whoami> …")
+		return fmt.Errorf("usage: zekra auth <login|logout|token|whoami> …")
 	}
 	sub, rest := args[0], args[1:]
 	switch sub {
@@ -244,41 +265,41 @@ func cmdAuth(args []string) error {
 	case "token", "tokens":
 		return cmdToken(rest)
 	}
-	return fmt.Errorf("unknown: cabrain auth %s", sub)
+	return fmt.Errorf("unknown: zekra auth %s", sub)
 }
 
 func usage() {
-	fmt.Print(`cabrain — connect any AI client to the CaBrain memory system
+	fmt.Print(`zekra — connect any AI client to the Zekra memory system
 
 QUICK START (new user)
-  cabrain auth login --token <cbt_…>          save your endpoint + token
-  cabrain mcp:install claude-desktop          wire the brain into your client — done
+  zekra auth login --token <cbt_…>          save your endpoint + token
+  zekra mcp:install claude-desktop          wire the brain into your client — done
   # (also: claude-code · codex · gemini · cursor)
 
 AUTH
-  cabrain auth login [--url URL] [--token TOKEN] [--agent ID] [--brain NS]
-  cabrain auth logout
-  cabrain auth whoami                          show endpoint + which brains you can reach
-  cabrain auth token new <agentId> [--admin] [--brain NAME]   mint a token (+grant a brain)
-  cabrain auth token list
+  zekra auth login [--url URL] [--token TOKEN] [--agent ID] [--brain NS]
+  zekra auth logout
+  zekra auth whoami                          show endpoint + which brains you can reach
+  zekra auth token new <agentId> [--admin] [--brain NAME]   mint a token (+grant a brain)
+  zekra auth token list
 
 MCP
-  cabrain mcp                                  run the stdio MCP server (clients invoke this)
-  cabrain mcp:install <client> [--brain N] [--name N] [--user]   wire into a client
-  cabrain mcp:print   <client> [--brain N]     print the config snippet, install nothing
-  cabrain mcp:uninstall <client> [--name N]    remove the cabrain entry from a client
+  zekra mcp                                  run the stdio MCP server (clients invoke this)
+  zekra mcp:install <client> [--brain N] [--name N] [--user]   wire into a client
+  zekra mcp:print   <client> [--brain N]     print the config snippet, install nothing
+  zekra mcp:uninstall <client> [--name N]    remove the zekra entry from a client
 
 BRAINS
-  cabrain brain list
-  cabrain brain create <name> [--description D] [--token]   new empty named brain (+ optional scoped token)
-  cabrain brain delete <name> --confirm
+  zekra brain list
+  zekra brain create <name> [--description D] [--token]   new empty named brain (+ optional scoped token)
+  zekra brain delete <name> --confirm
 
 MEMORY
-  cabrain recall <brain> <query...>            hybrid recall (vector + BM25 + rerank)
-  cabrain retain <brain> <content...>          store a memory
+  zekra recall <brain> <query...>            hybrid recall (vector + BM25 + rerank)
+  zekra retain <brain> <content...>          store a memory
 
 CLIENTS:  claude-code · claude-desktop · codex · gemini · cursor · print
-Config:   flags > env (CABRAIN_API_URL/TOKEN/AGENT_ID/DEFAULT_NAMESPACE) > ~/.cabrain/config.json
+Config:   flags > env (ZEKRA_API_URL/TOKEN/AGENT_ID/DEFAULT_NAMESPACE; legacy CABRAIN_* also read) > ~/.zekra/config.json
 `)
 }
 

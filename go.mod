@@ -1,3 +1,3 @@
-module github.com/togo-framework/cabrain-cli
+module github.com/fadymondy/zekra-cli
 
 go 1.23

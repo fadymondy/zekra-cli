@@ -1,15 +1,15 @@
 {
-  "name": "cabrain-cli",
+  "name": "zekra-cli",
   "version": "0.1.2",
-  "description": "Connect any AI client (Claude Desktop/Code, Codex, Gemini, Cursor) to the CaBrain memory system \u2014 one binary that is both the MCP server and its installer.",
+  "description": "Connect any AI client (Claude Desktop/Code, Codex, Gemini, Cursor) to the Zekra memory system \u2014 one binary that is both the MCP server and its installer.",
   "bin": {
-    "cabrain": "bin/cabrain.js"
+    "zekra": "bin/zekra.js"
   },
   "scripts": {
     "postinstall": "node scripts/postinstall.js"
   },
   "files": [
-    "bin/cabrain.js",
+    "bin/zekra.js",
     "scripts/postinstall.js",
     "README.md",
     "LICENSE"
@@ -17,7 +17,7 @@
   "keywords": [
     "mcp",
     "model-context-protocol",
-    "cabrain",
+    "zekra",
     "memory",
     "claude",
     "claude-desktop",
@@ -25,13 +25,13 @@
     "ai",
     "llm"
   ],
-  "homepage": "https://cabrain.fadymondy.com",
+  "homepage": "https://zekra.dev",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/togo-framework/cabrain-cli.git"
+    "url": "git+https://github.com/fadymondy/zekra-cli.git"
   },
   "bugs": {
-    "url": "https://github.com/togo-framework/cabrain-cli/issues"
+    "url": "https://github.com/fadymondy/zekra-cli/issues"
   },
   "license": "MIT",
   "author": "togo-framework",

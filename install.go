@@ -84,39 +84,39 @@ func claudeDesktopPath(home string) (string, error) {
 
 // serverEnv builds the env block for the MCP entry from the active config.
 func serverEnv(c Config, brain string) map[string]string {
-	env := map[string]string{"CABRAIN_API_URL": c.URL}
+	env := map[string]string{"ZEKRA_API_URL": c.URL}
 	if c.Token != "" {
-		env["CABRAIN_TOKEN"] = c.Token
+		env["ZEKRA_TOKEN"] = c.Token
 	}
 	if c.AgentID != "" {
-		env["CABRAIN_AGENT_ID"] = c.AgentID
+		env["ZEKRA_AGENT_ID"] = c.AgentID
 	}
 	if brain == "" {
 		brain = c.Namespace
 	}
 	if brain != "" {
-		env["CABRAIN_DEFAULT_NAMESPACE"] = brain
+		env["ZEKRA_DEFAULT_NAMESPACE"] = brain
 	}
 	return env
 }
 
-// cabrain mcp:install <client> [--brain N] [--name N] [--user] [--command PATH]
+// zekra mcp:install <client> [--brain N] [--name N] [--user] [--command PATH]
 func cmdInstall(args []string) error {
 	pos, f := parseFlags(args)
 	if len(pos) == 0 {
-		return fmt.Errorf("usage: cabrain mcp:install <claude-code|claude-desktop|codex|gemini|cursor|print> [--brain N] [--name N] [--user]")
+		return fmt.Errorf("usage: zekra mcp:install <claude-code|claude-desktop|codex|gemini|cursor|print> [--brain N] [--name N] [--user]")
 	}
 	target := pos[0]
 	c := loadConfig()
 	name := f["name"]
 	if name == "" {
-		name = "cabrain"
+		name = "zekra"
 	}
 	command := f["command"]
 	if command == "" {
-		command, _ = os.Executable() // point clients at THIS binary so `cabrain mcp` resolves
+		command, _ = os.Executable() // point clients at THIS binary so `zekra mcp` resolves
 		if command == "" {
-			command = "cabrain"
+			command = "zekra"
 		}
 	}
 	env := serverEnv(c, f["brain"])
@@ -130,7 +130,7 @@ func cmdInstall(args []string) error {
 		return fmt.Errorf("unknown client %q (try: claude-code, claude-desktop, codex, gemini, cursor, print)", target)
 	}
 	if c.Token == "" {
-		fmt.Println("⚠  no token saved — run `cabrain auth login --token <cbt_…>` first (installing anyway).")
+		fmt.Println("⚠  no token saved — run `zekra auth login --token <cbt_…>` first (installing anyway).")
 	}
 	p, err := spec.path(f["user"] == "true")
 	if err != nil {
@@ -151,11 +151,11 @@ func cmdInstall(args []string) error {
 	if spec.note != "" {
 		fmt.Printf("  note: %s\n", spec.note)
 	}
-	fmt.Printf("  brain: %s\n", orAll(env["CABRAIN_DEFAULT_NAMESPACE"]))
+	fmt.Printf("  brain: %s\n", orAll(env["ZEKRA_DEFAULT_NAMESPACE"]))
 	return nil
 }
 
-// cabrain mcp:print <client> — show the snippet without writing.
+// zekra mcp:print <client> — show the snippet without writing.
 func cmdMCPPrint(args []string) error {
 	pos, _ := parseFlags(args)
 	if len(pos) == 0 {
@@ -170,11 +170,11 @@ func cmdMCPPrint(args []string) error {
 	return cmdInstall(append([]string{"print"}, args[1:]...))
 }
 
-// cabrain mcp:uninstall <client> [--name N] [--user]
+// zekra mcp:uninstall <client> [--name N] [--user]
 func cmdUninstall(args []string) error {
 	pos, f := parseFlags(args)
 	if len(pos) == 0 {
-		return fmt.Errorf("usage: cabrain mcp:uninstall <client> [--name N]")
+		return fmt.Errorf("usage: zekra mcp:uninstall <client> [--name N]")
 	}
 	spec, ok := clients()[pos[0]]
 	if !ok {
@@ -260,7 +260,7 @@ func tomlBlock(name, command string, env map[string]string) string {
 	fmt.Fprintf(&sb, "command = %q\n", command)
 	fmt.Fprintf(&sb, "args = [\"mcp\"]\n")
 	// deterministic env order
-	keys := []string{"CABRAIN_API_URL", "CABRAIN_TOKEN", "CABRAIN_AGENT_ID", "CABRAIN_DEFAULT_NAMESPACE"}
+	keys := []string{"ZEKRA_API_URL", "ZEKRA_TOKEN", "ZEKRA_AGENT_ID", "ZEKRA_DEFAULT_NAMESPACE"}
 	pairs := []string{}
 	for _, k := range keys {
 		if v, ok := env[k]; ok {
@@ -307,7 +307,7 @@ func orAll(s string) string {
 
 func nameOr(n string) string {
 	if n == "" {
-		return "cabrain"
+		return "zekra"
 	}
 	return n
 }
@@ -319,5 +319,5 @@ func execOr(cmd string) string {
 	if e, _ := os.Executable(); e != "" {
 		return e
 	}
-	return "cabrain"
+	return "zekra"
 }

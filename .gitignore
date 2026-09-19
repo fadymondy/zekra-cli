@@ -1,7 +1,7 @@
-/cabrain
+/zekra
 /dist/
 *.exe
-bin/cabrain-bin
-bin/cabrain.exe
+bin/zekra-bin
+bin/zekra.exe
 bin/*.download
 node_modules/

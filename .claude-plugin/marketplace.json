@@ -1,18 +1,18 @@
 {
-  "name": "cabrain",
+  "name": "zekra",
   "owner": {
     "name": "togo-framework",
-    "url": "https://cabrain.fadymondy.com"
+    "url": "https://zekra.dev"
   },
   "metadata": {
-    "description": "CaBrain \u2014 a persistent memory organ for AI agents, as a Claude Code plugin.",
+    "description": "Zekra \u2014 a persistent memory organ for AI agents, as a Claude Code plugin.",
     "version": "0.1.2"
   },
   "plugins": [
     {
-      "name": "cabrain",
+      "name": "zekra",
       "source": "./",
-      "description": "Persistent hybrid-recall memory for Claude Code: the CaBrain MCP + memory-first commands, a curator agent, and an onboarding connector. Requires the `cabrain` CLI (npm i -g cabrain-cli).",
+      "description": "Persistent hybrid-recall memory for Claude Code: the Zekra MCP + memory-first commands, a curator agent, and an onboarding connector. Requires the `zekra` CLI (npm i -g zekra-cli).",
       "category": "memory",
       "keywords": [
         "memory",

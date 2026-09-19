@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cabrain hook rules",
+            "command": "zekra hook rules",
             "timeout": 10
           }
         ]
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cabrain hook recall",
+            "command": "zekra hook recall",
             "timeout": 12
           }
         ]

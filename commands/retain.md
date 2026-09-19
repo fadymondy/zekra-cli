@@ -1,9 +1,9 @@
 ---
-description: Store a memory into a CaBrain brain (runs the write-decision + embeds).
+description: Store a memory into a Zekra brain (runs the write-decision + embeds).
 argument-hint: "[brain] <content...>"
 ---
 
-Use the CaBrain **memory_retain** MCP tool to persist something durable.
+Use the Zekra **memory_retain** MCP tool to persist something durable.
 
 - Parse `$ARGUMENTS`: an optional leading brain name → `namespace` (else the session default), the rest is the `content`.
 - Distill the content to a clear, self-contained sentence or two before storing (the write-decision de-dupes; a crisp fact ranks and recalls better than a raw dump).

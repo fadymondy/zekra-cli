@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// cabrain login [--url URL] [--token TOKEN] [--agent ID] [--brain NS]
+// zekra login [--url URL] [--token TOKEN] [--agent ID] [--brain NS]
 func cmdLogin(args []string) error {
 	_, f := parseFlags(args)
 	c := loadConfig()
@@ -43,7 +43,7 @@ func cmdLogin(args []string) error {
 	return nil
 }
 
-// cabrain auth logout — forget saved credentials.
+// zekra auth logout — forget saved credentials.
 func cmdLogout(args []string) error {
 	c := loadConfig()
 	c.Token = ""
@@ -54,7 +54,7 @@ func cmdLogout(args []string) error {
 	return nil
 }
 
-// cabrain status
+// zekra status
 func cmdStatus(args []string) error {
 	c := loadConfig()
 	cl := newClient(c)
@@ -77,15 +77,15 @@ func cmdStatus(args []string) error {
 			}
 		}
 	} else if code == 401 || code == 403 {
-		fmt.Println("brains:   (token missing or lacks grants — run `cabrain login --token …`)")
+		fmt.Println("brains:   (token missing or lacks grants — run `zekra login --token …`)")
 	}
 	return nil
 }
 
-// cabrain brain <sub>
+// zekra brain <sub>
 func cmdBrain(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: cabrain brain <list|create|delete> …")
+		return fmt.Errorf("usage: zekra brain <list|create|delete> …")
 	}
 	sub, rest := args[0], args[1:]
 	c := loadConfig()
@@ -113,14 +113,14 @@ func cmdBrain(args []string) error {
 	case "create", "new":
 		pos, f := parseFlags(rest)
 		if len(pos) == 0 {
-			return fmt.Errorf("usage: cabrain brain create <name> [--description D] [--token]")
+			return fmt.Errorf("usage: zekra brain create <name> [--description D] [--token]")
 		}
 		return brainCreate(cl, c, pos[0], f)
 
 	case "delete", "rm":
 		pos, f := parseFlags(rest)
 		if len(pos) == 0 {
-			return fmt.Errorf("usage: cabrain brain delete <name> --confirm")
+			return fmt.Errorf("usage: zekra brain delete <name> --confirm")
 		}
 		if f["confirm"] != "true" && f["confirm"] != "yes" {
 			return fmt.Errorf("refusing to delete brain %q without --confirm", pos[0])
@@ -137,7 +137,7 @@ func cmdBrain(args []string) error {
 		fmt.Printf("deleted brain %q: %s\n", pos[0], pretty(m))
 		return nil
 	}
-	return fmt.Errorf("unknown: cabrain brain %s", sub)
+	return fmt.Errorf("unknown: zekra brain %s", sub)
 }
 
 // brainCreate materialises a new named brain. Brains are enumerated from the
@@ -157,9 +157,9 @@ func brainCreate(cl *client, c Config, name string, f map[string]string) error {
 	// 1. Seed the genesis memory (creates the namespace).
 	m, code, err := cl.do("POST", "/api/brain/retain", nil, map[string]any{
 		"namespace":      name,
-		"content":        fmt.Sprintf("Brain %q created via cabrain-cli. %s", name, desc),
+		"content":        fmt.Sprintf("Brain %q created via zekra-cli. %s", name, desc),
 		"sourceKind":     "system",
-		"sourceRef":      "cabrain-cli/brain-create",
+		"sourceRef":      "zekra-cli/brain-create",
 		"importanceHint": 0.9,
 	})
 	if err != nil {
@@ -177,7 +177,7 @@ func brainCreate(cl *client, c Config, name string, f map[string]string) error {
 			agent = "brain-" + name
 		}
 		tm, code, err := cl.do("POST", "/api/brain/tokens", nil, map[string]any{
-			"agentId": agent, "label": "cabrain-cli scoped: " + name, "isAdmin": false})
+			"agentId": agent, "label": "zekra-cli scoped: " + name, "isAdmin": false})
 		if err != nil {
 			return err
 		}
@@ -192,19 +192,19 @@ func brainCreate(cl *client, c Config, name string, f map[string]string) error {
 		}
 		fmt.Printf("\n  scoped token (agent %q): %s\n", agent, tok)
 		fmt.Println("\n  paste into any MCP client (Claude Desktop / Claude Code / Cursor / Gemini):")
-		fmt.Println(indent(jsonSnippet("cabrain-"+name, c.URL, tok, name)))
-		fmt.Printf("\n  or run:  cabrain install claude-desktop --brain %s --name cabrain-%s\n", name, name)
+		fmt.Println(indent(jsonSnippet("zekra-"+name, c.URL, tok, name)))
+		fmt.Printf("\n  or run:  zekra install claude-desktop --brain %s --name zekra-%s\n", name, name)
 	} else {
-		fmt.Printf("  connect it:  cabrain install <client> --brain %s\n", name)
+		fmt.Printf("  connect it:  zekra install <client> --brain %s\n", name)
 		fmt.Printf("  (add --token to mint a scoped token you can hand to a teammate)\n")
 	}
 	return nil
 }
 
-// cabrain token <sub>
+// zekra token <sub>
 func cmdToken(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: cabrain token <list|new> …")
+		return fmt.Errorf("usage: zekra token <list|new> …")
 	}
 	sub, rest := args[0], args[1:]
 	cl := newClient(loadConfig())
@@ -236,7 +236,7 @@ func cmdToken(args []string) error {
 	case "new", "create":
 		pos, f := parseFlags(rest)
 		if len(pos) == 0 {
-			return fmt.Errorf("usage: cabrain token new <agentId> [--admin] [--brain NAME]")
+			return fmt.Errorf("usage: zekra token new <agentId> [--admin] [--brain NAME]")
 		}
 		agent := pos[0]
 		m, code, err := cl.do("POST", "/api/brain/tokens", nil, map[string]any{
@@ -259,14 +259,14 @@ func cmdToken(args []string) error {
 		}
 		return nil
 	}
-	return fmt.Errorf("unknown: cabrain token %s", sub)
+	return fmt.Errorf("unknown: zekra token %s", sub)
 }
 
-// cabrain recall <brain> <query...>
+// zekra recall <brain> <query...>
 func cmdRecall(args []string) error {
 	pos, f := parseFlags(args)
 	if len(pos) < 2 {
-		return fmt.Errorf("usage: cabrain recall <brain> <query...>")
+		return fmt.Errorf("usage: zekra recall <brain> <query...>")
 	}
 	cl := newClient(loadConfig())
 	payload := map[string]any{"namespace": pos[0], "query": strings.Join(pos[1:], " ")}
@@ -299,11 +299,11 @@ func cmdRecall(args []string) error {
 	return nil
 }
 
-// cabrain retain <brain> <content...>
+// zekra retain <brain> <content...>
 func cmdRetain(args []string) error {
 	pos, f := parseFlags(args)
 	if len(pos) < 2 {
-		return fmt.Errorf("usage: cabrain retain <brain> <content...>")
+		return fmt.Errorf("usage: zekra retain <brain> <content...>")
 	}
 	cl := newClient(loadConfig())
 	payload := map[string]any{"namespace": pos[0], "content": strings.Join(pos[1:], " ")}
@@ -346,13 +346,13 @@ func indent(s string) string {
 
 // jsonSnippet renders the mcpServers entry a JSON-based client expects.
 func jsonSnippet(name, apiURL, token, ns string) string {
-	env := map[string]string{"CABRAIN_API_URL": apiURL, "CABRAIN_TOKEN": token}
+	env := map[string]string{"ZEKRA_API_URL": apiURL, "ZEKRA_TOKEN": token}
 	if ns != "" {
-		env["CABRAIN_DEFAULT_NAMESPACE"] = ns
+		env["ZEKRA_DEFAULT_NAMESPACE"] = ns
 	}
 	entry := map[string]any{
 		"mcpServers": map[string]any{
-			name: map[string]any{"command": "cabrain", "args": []string{"mcp"}, "env": env},
+			name: map[string]any{"command": "zekra", "args": []string{"mcp"}, "env": env},
 		},
 	}
 	return pretty(entry)

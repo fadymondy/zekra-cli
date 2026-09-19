@@ -1,7 +1,7 @@
 package main
 
 // toolDefs is the tools/list payload — the memory organ surface exposed to any
-// MCP host. Schemas mirror the CaBrain REST contract (contracts/tools.md).
+// MCP host. Schemas mirror the Zekra REST contract (contracts/tools.md).
 type prop map[string]any
 
 func obj(required []string, props map[string]any) map[string]any {
@@ -110,7 +110,7 @@ var toolDefs = []map[string]any{
 	},
 	{
 		"name":        "brain_create_token",
-		"description": "ACL (admin): mint an access token for an agent identity (optionally admin). The holder sets CABRAIN_TOKEN.",
+		"description": "ACL (admin): mint an access token for an agent identity (optionally admin). The holder sets ZEKRA_TOKEN.",
 		"inputSchema": obj([]string{"agentId"}, map[string]any{
 			"agentId": prop{"type": "string"}, "label": prop{"type": "string"}, "isAdmin": prop{"type": "boolean"}}),
 	},

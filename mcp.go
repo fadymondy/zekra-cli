@@ -14,8 +14,8 @@ import (
 const protocolVersion = "2024-11-05"
 
 // runMCP serves the Model Context Protocol over stdio (JSON-RPC 2.0, newline
-// framed) — a thin adapter over the CaBrain REST API, so every scoping/validation
-// decision stays server-side. This is what `cabrain mcp` runs and what MCP hosts
+// framed) — a thin adapter over the Zekra REST API, so every scoping/validation
+// decision stays server-side. This is what `zekra mcp` runs and what MCP hosts
 // (Claude Desktop, Claude Code, Codex, Gemini, Cursor) invoke.
 func runMCP(cfg Config) {
 	m := &mcp{cl: newClient(cfg), defaultNS: cfg.Namespace, out: json.NewEncoder(os.Stdout)}
@@ -70,7 +70,7 @@ func (m *mcp) dispatch(req *rpcReq) {
 		m.reply(req.ID, map[string]any{
 			"protocolVersion": protocolVersion,
 			"capabilities":    map[string]any{"tools": map[string]any{}},
-			"serverInfo":      map[string]any{"name": "cabrain", "version": version},
+			"serverInfo":      map[string]any{"name": "zekra", "version": version},
 		})
 	case "notifications/initialized", "notifications/cancelled":
 		// notifications get no response
@@ -162,7 +162,7 @@ func (m *mcp) callTool(req *rpcReq) {
 			"namespace":      ns,
 			"content":        strings.TrimSpace(fmt.Sprintf("Brain %q created via MCP. %s", ns, desc)),
 			"sourceKind":     "system",
-			"sourceRef":      "cabrain-cli/brain-create",
+			"sourceRef":      "zekra-cli/brain-create",
 			"importanceHint": 0.9}))
 	case "brain_delete":
 		// The API guard is confirm == namespace; accept a boolean true from the

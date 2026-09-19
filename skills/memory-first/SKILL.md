@@ -1,11 +1,11 @@
 ---
 name: memory-first
-description: The recall→answer/act→retain discipline for working with a CaBrain brain. Use whenever a task touches durable knowledge — questions about people/projects/decisions, researching before acting, or capturing something learned. Makes the brain the source of truth instead of guessing.
+description: The recall→answer/act→retain discipline for working with a Zekra brain. Use whenever a task touches durable knowledge — questions about people/projects/decisions, researching before acting, or capturing something learned. Makes the brain the source of truth instead of guessing.
 ---
 
 # Memory-first
 
-You have a CaBrain brain available through MCP tools. Treat it as your source of truth. The loop, every turn: **recall → answer/act → retain.**
+You have a Zekra brain available through MCP tools. Treat it as your source of truth. The loop, every turn: **recall → answer/act → retain.**
 
 ## 1. Recall BEFORE you answer or act
 For any question or task touching durable knowledge (a person, project, venture, issue, decision, learning, or a "who/what/why"), call **`memory_recall`** first — even if you think you already know. Before writing/planning/drafting on a topic, recall its context so you build on what's known.
@@ -26,6 +26,6 @@ After you produce something durable — a decision and its rationale ("chose X o
 If information is likely already in the brain, recall it instead of asking the user to repeat it. Only ask for what the brain genuinely lacks — then retain what you learn.
 
 ## Namespaces
-Pick the one brain that matches the question; don't mix scopes in a single query. Respect a session's default brain when one is configured (`CABRAIN_DEFAULT_NAMESPACE`). Recall more than one brain only when it's genuinely ambiguous, then merge.
+Pick the one brain that matches the question; don't mix scopes in a single query. Respect a session's default brain when one is configured (`ZEKRA_DEFAULT_NAMESPACE`). Recall more than one brain only when it's genuinely ambiguous, then merge.
 
 **Order of operations, always: recall → answer/act → retain.**
